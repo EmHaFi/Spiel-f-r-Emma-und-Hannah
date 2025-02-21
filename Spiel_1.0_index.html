@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>Lernprogramm: Rechnen, Raten & Buchstabieren</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f0f8ff; /* wird per Script geändert */
+      text-align: center;
+      padding: 20px;
+    }
+    h1 { margin-bottom: 10px; }
+    #startScreen, #taskScreen, #finalScreen {
+      max-width: 600px;
+      margin: 20px auto;
+      padding: 20px;
+      border: 2px solid #ccc;
+      border-radius: 10px;
+      background-color: #fff;
+    }
+    input[type="text"], input[type="number"] {
+      font-size: 1.2em;
+      padding: 5px;
+      margin: 10px;
+    }
+    button {
+      font-size: 1.1em;
+      padding: 10px 20px;
+      margin: 10px;
+      cursor: pointer;
+    }
+    #question {
+      font-size: 1.5em;
+      margin: 20px 0;
+      min-height: 60px;
+    }
+    #feedback {
+      font-size: 1.3em;
+      margin: 10px;
+      color: green;
+      min-height: 30px;
+    }
+    #tryAgainButtons { margin: 10px; }
+    /* Container für Multiple-Choice-Optionen */
+    #options {
+      margin: 10px auto;
+      text-align: left;
+      max-width: 400px;
+    }
+    /* Canvas für Feuerwerk */
+    #fireworksCanvas {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      pointer-events: none;
+      z-index: 1000;
+    }
+  </style>
+</head>
+<body>
+  <h1>Lernprogramm für dich</h1>
+
+  <!-- Startbildschirm: Namenseingabe -->
+  <div id="startScreen">
+    <p>Bitte gib deinen Namen ein (nur "Hannah" oder "Emma" sind möglich):</p>
+    <input type="text" id="childName" placeholder="Dein Name">
+    <br>
+    <button onclick="startProgram()">Start</button>
+    <div id="nameError" style="color:red;"></div>
+  </div>
+
+  <!-- Aufgabenbildschirm -->
+  <div id="taskScreen" style="display:none;">
+    <div id="question"></div>
+    <!-- Freitextfeld für Matheaufgaben -->
+    <input type="text" id="answerInput" placeholder="Deine Antwort">
+    <!-- Container für Multiple-Choice (wird bei Nicht-Mathe-Aufgaben angezeigt) -->
+    <div id="options" style="display:none;"></div>
+    <br>
+    <button id="checkButton" onclick="checkAnswer()">Überprüfen</button>
+    <div id="tryAgainButtons" style="display:none;">
+      <button onclick="tryAgain()">Nochmal versuchen</button>
+      <button onclick="showSolution()">Antwort anzeigen</button>
+    </div>
+    <br>
+    <button id="nextButton" onclick="nextTask()" style="display:none;">Weiter</button>
+    <div id="feedback"></div>
+  </div>
+
+  <!-- Abschlussscreen -->
+  <div id="finalScreen" style="display:none;">
+    <h2 id="finalMessage"></h2>
+  </div>
+
+  <!-- Canvas für Feuerwerk -->
+  <canvas id="fireworksCanvas"></canvas>
+
+  <script>
+    // Kandidaten für Nicht-Mathe-Aufgaben (Rätsel und Buchstabieraufgaben)
+    const candidateRiddlesHannah = [
+      { question: "Wie nennt man einen Bumerang, der nicht zurückkommt?", answer: "ein stock" },
+      { question: "Was ist schwarz-weiß und hüpft von Baum zu Baum?", answer: "ein schwinger" },
+      { question: "Was ist orange und läuft durch den Wald?", answer: "eine wanderine" }
+    ];
+    const candidateSpellingHannah = [
+      { word: "SONNE" },
+      { word: "MOND" },
+      { word: "STERNE" },
+      { word: "WOLKE" },
+      { word: "REGEN" }
+    ];
+    const candidateRiddlesEmma = [
+      { question: "Warum können Geister so schlecht lügen?", answer: "weil man durch sie hindurchsehen kann" },
+      { question: "Was macht ein Computer im Meer?", answer: "er surft" },
+      { question: "Warum ging der Pilz auf die Party?", answer: "weil er ein champignon war" }
+    ];
+    const candidateSpellingEmma = [
+      { word: "SCHMETTERLING" },
+      { word: "ABENTEUER" },
+      { word: "ZAUBERWALD" },
+      { word: "ENTDECKUNG" },
+      { word: "WISSENSCHAFT" }
+    ];
+
+    // Erstelle separate Pools: Math- und Nicht-Math-Aufgaben
+    // Für Matheaufgaben erstellen wir z. B. 20 einzigartige Aufgaben pro Kind.
+    let mathPoolHannah = [];
+    for (let i = 0; i < 20; i++) {
+      mathPoolHannah.push({ type: "math", min: 1, max: 10, id: "mathH_" + i });
+    }
+    let mathPoolEmma = [];
+    for (let i = 0; i < 20; i++) {
+      mathPoolEmma.push({ type: "math", min: 10, max: 20, id: "mathE_" + i });
+    }
+
+    // Für Nicht-Mathe-Aufgaben erzeugen wir 10 Aufgaben pro Kind (5 Rätsel, 5 Buchstabieraufgaben), jede mit eindeutiger ID.
+    let nonMathPoolHannah = [];
+    for (let i = 0; i < 5; i++) {
+      let cand = candidateRiddlesHannah[i % candidateRiddlesHannah.length];
+      nonMathPoolHannah.push({ type: "riddle", question: cand.question + " (#" + i + ")", answer: cand.answer, id: "riddleH_" + i });
+    }
+    for (let i = 0; i < 5; i++) {
+      let cand = candidateSpellingHannah[i % candidateSpellingHannah.length];
+      nonMathPoolHannah.push({ type: "spelling", question: "Schreibe das Wort '" + cand.word + "' in Kleinbuchstaben. (#" + i + ")", answer: cand.word.toLowerCase(), id: "spellingH_" + i });
+    }
+
+    let nonMathPoolEmma = [];
+    for (let i = 0; i < 5; i++) {
+      let cand = candidateRiddlesEmma[i % candidateRiddlesEmma.length];
+      nonMathPoolEmma.push({ type: "riddle", question: cand.question + " (#" + i + ")", answer: cand.answer, id: "riddleE_" + i });
+    }
+    for (let i = 0; i < 5; i++) {
+      let cand = candidateSpellingEmma[i % candidateSpellingEmma.length];
+      nonMathPoolEmma.push({ type: "spelling", question: "Schreibe das Wort '" + cand.word + "' in Kleinbuchstaben. (#" + i + ")", answer: cand.word.toLowerCase(), id: "spellingE_" + i });
+    }
+
+    // Die vollständigen Pools werden getrennt gehalten:
+    let poolHannah = mathPoolHannah.concat(nonMathPoolHannah);
+    let poolEmma = mathPoolEmma.concat(nonMathPoolEmma);
+
+    // Für ein Spiel wählen wir 5 Mathe- und 5 Nicht-Mathe-Aufgaben aus (ohne Wiederholung)
+    let tasks = []; // 10 Aufgaben für das aktuelle Spiel
+    let currentTaskIndex = 0;
+    let currentAnswer = "";
+    let currentTask = null;
+    let childName = "";
+
+    const jokes = [
+      "Warum konnte der Computer nicht schwimmen? Weil er zu viele Bits hatte!",
+      "Warum ging der Pilz auf die Party? Weil er ein Champignon war!",
+      "Was macht ein Keks unter einem Baum? Krümel!"
+    ];
+
+    // Hilfsfunktion zum Mischen eines Arrays (Fisher-Yates)
+    function shuffle(array) {
+      for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+      }
+      return array;
+    }
+
+    // Funktion, um n zufällige (einmalige) Elemente aus einem Array zu ziehen
+    function pickRandom(array, count) {
+      let copy = array.slice();
+      shuffle(copy);
+      return copy.slice(0, count);
+    }
+
+    // Für Nicht-Mathe-Aufgaben: Erstelle Multiple-Choice-Optionen
+    function generateOptions(task) {
+      let options = [];
+      let correct = task.answer.toLowerCase();
+      options.push(correct);
+      let distractorPool;
+      if (task.type === "riddle") {
+        distractorPool = (childName.toLowerCase() === "hannah") ? candidateRiddlesHannah : candidateRiddlesEmma;
+      } else if (task.type === "spelling") {
+        distractorPool = (childName.toLowerCase() === "hannah") ? candidateSpellingHannah : candidateSpellingEmma;
+      }
+      let allOptions = distractorPool.map(item => {
+        return task.type === "spelling" ? item.word.toLowerCase() : item.answer.toLowerCase();
+      });
+      // Entferne die korrekte Antwort
+      allOptions = allOptions.filter(opt => opt !== correct);
+      shuffle(allOptions);
+      options = options.concat(allOptions.slice(0, 3));
+      return shuffle(options);
+    }
+
+    function startProgram() {
+      childName = document.getElementById("childName").value.trim();
+      const nameError = document.getElementById("nameError");
+      if (childName.toLowerCase() !== "hannah" && childName.toLowerCase() !== "emma") {
+        nameError.innerText = 'Bitte gib entweder "Hannah" oder "Emma" ein.';
+        return;
+      }
+      nameError.innerText = "";
+      // Wähle zufällig eine Hintergrundfarbe
+      const bgColors = ["#f0f8ff", "#ffe4e1", "#f5f5dc", "#fafad2", "#e6e6fa"];
+      document.body.style.backgroundColor = bgColors[Math.floor(Math.random() * bgColors.length)];
+
+      if (childName.toLowerCase() === "hannah") {
+        tasks = pickRandom(mathPoolHannah, 5).concat(pickRandom(nonMathPoolHannah, 5));
+      } else {
+        tasks = pickRandom(mathPoolEmma, 5).concat(pickRandom(nonMathPoolEmma, 5));
+      }
+      tasks = shuffle(tasks);
+      currentTaskIndex = 0;
+      document.getElementById("startScreen").style.display = "none";
+      document.getElementById("taskScreen").style.display = "block";
+      showTask();
+    }
+
+    function showTask() {
+      currentTask = tasks[currentTaskIndex];
+      document.getElementById("feedback").innerText = "";
+      document.getElementById("answerInput").value = "";
+      document.getElementById("nextButton").style.display = "none";
+      document.getElementById("tryAgainButtons").style.display = "none";
+
+      if (currentTask.type === "math") {
+        document.getElementById("answerInput").style.display = "inline-block";
+        document.getElementById("options").style.display = "none";
+        const min = currentTask.min;
+        const max = currentTask.max;
+        const num1 = Math.floor(Math.random() * (max - min + 1)) + min;
+        const num2 = Math.floor(Math.random() * (max - min + 1)) + min;
+        currentAnswer = (num1 + num2).toString();
+        document.getElementById("question").innerText = `Aufgabe (${currentTask.id}): Was ist ${num1} + ${num2}?`;
+      } else {
+        document.getElementById("answerInput").style.display = "none";
+        document.getElementById("options").style.display = "block";
+        document.getElementById("question").innerText = currentTask.question;
+        currentAnswer = currentTask.answer.toLowerCase();
+        let options = generateOptions(currentTask);
+        let html = "";
+        options.forEach((opt, index) => {
+          html += `<div>
+                     <input type="radio" name="option" id="opt${index}" value="${opt}">
+                     <label for="opt${index}">${opt}</label>
+                   </div>`;
+        });
+        document.getElementById("options").innerHTML = html;
+      }
+    }
+
+    function checkAnswer() {
+      let userAnswer = "";
+      if (currentTask.type === "math") {
+        userAnswer = document.getElementById("answerInput").value.trim().toLowerCase();
+      } else {
+        const selected = document.querySelector('input[name="option"]:checked');
+        if (!selected) {
+          document.getElementById("feedback").innerText = "Bitte wähle eine Option aus!";
+          return;
+        }
+        userAnswer = selected.value.trim().toLowerCase();
+      }
+      if (userAnswer === currentAnswer) {
+        document.getElementById("feedback").innerText = `Gut gemacht, ${childName}!`;
+        if (Math.random() < 0.5) {
+          const randomJoke = jokes[Math.floor(Math.random() * jokes.length)];
+          document.getElementById("feedback").innerText += "\n" + randomJoke;
+        }
+        document.getElementById("checkButton").disabled = true;
+        document.getElementById("nextButton").style.display = "inline-block";
+        document.getElementById("tryAgainButtons").style.display = "none";
+      } else {
+        document.getElementById("feedback").innerText = "Falsch! Möchtest du es nochmal versuchen oder die Lösung anzeigen?";
+        document.getElementById("tryAgainButtons").style.display = "block";
+      }
+    }
+
+    function tryAgain() {
+      document.getElementById("feedback").innerText = "";
+      if (currentTask.type === "math") {
+        document.getElementById("answerInput").value = "";
+      } else {
+        let radios = document.getElementsByName("option");
+        radios.forEach(radio => radio.checked = false);
+      }
+    }
+
+    function showSolution() {
+      document.getElementById("feedback").innerText = `Die richtige Antwort ist: ${currentAnswer}`;
+      document.getElementById("checkButton").disabled = true;
+      document.getElementById("nextButton").style.display = "inline-block";
+      document.getElementById("tryAgainButtons").style.display = "none";
+    }
+
+    function nextTask() {
+      currentTaskIndex++;
+      document.getElementById("checkButton").disabled = false;
+      if (currentTaskIndex < tasks.length) {
+        showTask();
+      } else {
+        endProgram();
+      }
+    }
+
+    function endProgram() {
+      document.getElementById("taskScreen").style.display = "none";
+      document.getElementById("finalScreen").style.display = "block";
+      document.getElementById("finalMessage").innerText = `Liebe ${capitalize(childName)}, ich hoffe, es hat Dir Spass gemacht!`;
+      startFireworks();
+    }
+
+    function capitalize(str) {
+      return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+    }
+
+    // Einfaches Feuerwerk mittels Canvas
+    function startFireworks() {
+      const canvas = document.getElementById("fireworksCanvas");
+      canvas.style.display = "block";
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      const ctx = canvas.getContext("2d");
+      let fireworks = [];
+      function createFirework() {
+        let x = Math.random() * canvas.width;
+        let y = Math.random() * canvas.height / 2;
+        let colors = ["red", "yellow", "blue", "green", "purple", "orange"];
+        let color = colors[Math.floor(Math.random() * colors.length)];
+        fireworks.push({ x: x, y: y, radius: 1, maxRadius: Math.random() * 30 + 20, color: color, alpha: 1 });
+      }
+      function update() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        for (let i = fireworks.length - 1; i >= 0; i--) {
+          let fw = fireworks[i];
+          fw.radius += 0.8;
+          fw.alpha -= 0.02;
+          if (fw.alpha <= 0) {
+            fireworks.splice(i, 1);
+            continue;
+          }
+          ctx.beginPath();
+          ctx.arc(fw.x, fw.y, fw.radius, 0, Math.PI * 2);
+          ctx.fillStyle = fw.color;
+          ctx.globalAlpha = fw.alpha;
+          ctx.fill();
+          ctx.globalAlpha = 1;
+        }
+        if (Math.random() < 0.15) {
+          createFirework();
+        }
+        requestAnimationFrame(update);
+      }
+      update();
+      setTimeout(() => { canvas.style.display = "none"; }, 10000);
+    }
+  </script>
+</body>
+</html>
